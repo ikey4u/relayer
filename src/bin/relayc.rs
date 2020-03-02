@@ -1,35 +1,11 @@
-#[macro_use]
-extern crate serde;
-extern crate serde_json;
-extern crate dirs;
 extern crate tokio;
 #[macro_use]
 extern crate futures;
 
-use std::fs::File;
-use std::path::{PathBuf};
 use std::net::{SocketAddr};
-
-use serde_json as json;
 use tokio::net::{TcpListener, TcpStream};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ServerAddr {
-    host: String,
-    port: u16,
-}
-
-impl ServerAddr {
-    pub fn to_string(&self) -> String {
-        format!("{}:{}", self.host, self.port)
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ServerConfig {
-    local: ServerAddr,
-    remote: ServerAddr,
-}
+use relayer::{ServerAddr, load_config};
 
 pub async fn run(local: ServerAddr, remote: ServerAddr) -> Result<(), Box<dyn std::error::Error>> {
     let local_addr = local.to_string().parse::<SocketAddr>().unwrap();
@@ -56,12 +32,6 @@ pub async fn run(local: ServerAddr, remote: ServerAddr) -> Result<(), Box<dyn st
 
 #[tokio::main]
 async fn main() -> Result<(),  Box<dyn std::error::Error>> {
-
-    let homedir = dirs::home_dir().expect("Cannot get home directory!");
-    let confdir: PathBuf = [homedir.to_str().unwrap(), ".config", "relayer"].iter().collect();
-    let mut config_path = confdir.clone();
-    config_path.push("config.json");
-    let config = File::open(config_path)?;
-    let server_config: ServerConfig = json::from_reader(config)?;
+    let server_config = load_config()?;
     run(server_config.local, server_config.remote).await
 }
