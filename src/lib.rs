@@ -23,6 +23,7 @@ impl ServerAddr {
 pub struct ServerConfig {
     pub local: ServerAddr,
     pub remote: ServerAddr,
+    pub relayer: bool,
 }
 
 pub fn load_config() -> Result<ServerConfig, Box<dyn std::error::Error>> {
