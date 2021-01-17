@@ -4,7 +4,7 @@
         "port": 8081
     },
     "remote": {
-        "host": "<remote ip>",
-        "port": "<remote port>"
+        "host": "47.240.22.222",
+        "port": 8000
     }
 }
