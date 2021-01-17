@@ -1,37 +1,86 @@
-#[macro_use]
-extern crate serde;
-extern crate serde_json;
-extern crate dirs;
-
-use std::fs::File;
-use std::path::{PathBuf};
+use dirs;
 use serde_json as json;
+use serde::{Serialize, Deserialize};
+use anyhow::{Context, Result, anyhow};
+use std::fs::File;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ServerAddr {
-    host: String,
-    port: u16,
+/// anyhow error 封装, 实现了行号打印, 使用示例如下
+///
+/// - return 返回 anyhow::Result
+///
+///         return Err(errlog!("Unkown file type"));
+///
+/// - context 信息
+///
+///         File:open(filepath).context(errlog!("Cannot open file {}", filepath))?;
+///
+macro_rules! errlog {
+    ($msg:literal $(,)?) => {
+        anyhow!(format!("[{}].[{}]: {}", file!(), line!(), $msg))
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        anyhow!(format!("[{}].[{}]: {}", file!(), line!(), format!($fmt, $($arg)*)))
+    };
 }
 
-impl ServerAddr {
-    pub fn to_string(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RelayerConfig {
+    pub lhost: String,
+    pub lport: u16,
+    pub rhost: Option<String>,
+    pub rport: Option<u16>,
+}
+
+pub enum RelayerType {
+    CLIENT,
+    SERVER,
+}
+
+
+impl RelayerConfig {
+    pub fn get_server_addr(&self) -> Option<String> {
+        if let Some(rhost) = self.rhost.as_ref() {
+            if let Some(rport) = self.rport.as_ref() {
+                return Some(format!("{}:{}", rhost, rport));
+            }
+        }
+        None
+    }
+
+    pub fn get_local_addr(&self) -> String {
+        format!("{}:{}", self.lhost, self.lport)
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ServerConfig {
-    pub local: ServerAddr,
-    pub remote: ServerAddr,
-    pub relayer: bool,
+impl std::fmt::Display for RelayerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let local = format!("local: {}:{}", self.lhost, self.lport);
+        if let Some(rhost) = self.rhost.as_ref() {
+            if let Some(rport) = self.rport.as_ref() {
+                let remote = format!("remote: {}:{}", rhost, rport);
+                return write!(f, "{}", format!("{}; remote: {}", local, remote));
+            }
+        }
+        write!(f, "{}", local)
+    }
 }
 
-pub fn load_config() -> Result<ServerConfig, Box<dyn std::error::Error>> {
-    let homedir = dirs::home_dir().expect("Cannot get home directory!");
-    let confdir: PathBuf = [homedir.to_str().unwrap(), ".config", "relayer"].iter().collect();
-    let mut config_path = confdir.clone();
-    config_path.push("config.json");
-    let config = File::open(config_path)?;
-    let server_config: ServerConfig = json::from_reader(config)?;
-    Ok(server_config)
+pub fn load_config(conftype: RelayerType) -> Result<RelayerConfig> {
+    let confpath = dirs::home_dir()
+        .context(errlog!("Cannot get home directory!"))?
+        .join(".config").join("relayer").join(
+            match conftype {
+                RelayerType::CLIENT => {
+                    "relayc.json"
+                },
+                RelayerType::SERVER => {
+                    "relays.json"
+                }
+            }
+        );
+    let config = File::open(&confpath)
+        .context(errlog!("Cannot open {:?}", confpath))?;
+    let config: RelayerConfig = json::from_reader(config)
+        .context(errlog!("Cannot load json from {:?}", confpath))?;
+    Ok(config)
 }

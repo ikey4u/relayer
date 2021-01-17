@@ -60,8 +60,9 @@ use std::net::{SocketAddr};
 use crate::tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use std::net::Shutdown;
-use relayer::{ServerConfig, load_config};
 use std::io::{Error, ErrorKind};
+
+use relayer::{RelayerConfig, RelayerType, load_config};
 
 #[derive(Debug)]
 struct Socks5Request {
@@ -126,22 +127,12 @@ impl Socks5Request {
     }
 }
 
-async fn forward(mut srcstream: TcpStream, mut dststream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut local_recv, mut local_send) = srcstream.split();
-    let (mut remote_recv, mut remote_send) = dststream.split();
-    let (_remote_bytes_copied, _local_bytes_copied) = join!(
-        tokio::io::copy(&mut remote_recv, &mut local_send),
-        tokio::io::copy(&mut local_recv, &mut remote_send),
-    );
-    Ok(())
-}
-
 async fn handle(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
     let mut header = [0u8; 2];
     stream.read_exact(&mut header).await.unwrap();
     let (version, auth_method_count) = (header[0], header[1]);
     if version != 0x5 || auth_method_count <= 0 {
-        stream.shutdown(Shutdown::Both)?;
+        //stream.shutdown(Shutdown::Both)?;
         let err = Box::new(Error::new(ErrorKind::ConnectionAborted, "Not a valid socks5 connection!"));
         return Err(err);
     }
@@ -162,8 +153,8 @@ async fn handle(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-pub async fn run(srvconf: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let local_addr = srvconf.local.to_string().parse::<SocketAddr>().unwrap();
+pub async fn run(srvconf: RelayerConfig) -> Result<(), Box<dyn std::error::Error>> {
+    let local_addr = srvconf.get_local_addr().parse::<SocketAddr>().unwrap();
     let mut listener = TcpListener::bind(&local_addr).await.unwrap();
     println!("Listening at {} ...", local_addr.to_string());
     loop {
@@ -172,14 +163,7 @@ pub async fn run(srvconf: ServerConfig) -> Result<(), Box<dyn std::error::Error>
         let srvconf = srvconf.clone();
         tokio::spawn(
             async move {
-                if srvconf.relayer {
-                    let remote_addr = srvconf.remote.to_string().parse::<SocketAddr>().unwrap();
-                    println!("Connect to new relay server {} ...", remote_addr.to_string());
-                    let remote_stream = TcpStream::connect(&remote_addr).await.unwrap();
-                    forward(local_stream, remote_stream).await.unwrap();
-                } else {
-                    handle(local_stream).await.unwrap();
-                }
+                handle(local_stream).await.unwrap();
             }
         );
     }
@@ -187,7 +171,8 @@ pub async fn run(srvconf: ServerConfig) -> Result<(), Box<dyn std::error::Error>
 
 #[tokio::main]
 async fn main() -> Result<(),  Box<dyn std::error::Error>> {
-    let srvconf = load_config()?;
+    let srvconf = load_config(RelayerType::SERVER)?;
+    println!("{}", srvconf);
     run(srvconf).await?;
     Ok(())
 }

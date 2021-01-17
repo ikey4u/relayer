@@ -1,13 +1,14 @@
-extern crate tokio;
 #[macro_use]
 extern crate futures;
+
+use relayer::RelayerError;
 
 use std::net::{SocketAddr};
 use tokio::net::{TcpListener, TcpStream};
 
-use relayer::{ServerAddr, load_config};
+use relayer::{RelayerConfig, RelayerType, Error, Result, load_config};
 
-pub async fn run(local: ServerAddr, remote: ServerAddr) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(local: ServerAddr, remote: ServerAddr) -> Result<()> {
     let local_addr = local.to_string().parse::<SocketAddr>().unwrap();
     let remote_addr = remote.to_string().parse::<SocketAddr>().unwrap();
     let mut listener = TcpListener::bind(&local_addr).await.unwrap();
@@ -31,7 +32,7 @@ pub async fn run(local: ServerAddr, remote: ServerAddr) -> Result<(), Box<dyn st
 }
 
 #[tokio::main]
-async fn main() -> Result<(),  Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     let server_config = load_config()?;
-    run(server_config.local, server_config.remote).await
+    // run(server_config.local, server_config.remote).await
 }
