@@ -1,7 +1,7 @@
 use dirs;
 use serde_json as json;
 use serde::{Serialize, Deserialize};
-use anyhow::{Context, Result, anyhow};
+pub use anyhow::{Context, Result, anyhow};
 use std::fs::File;
 
 /// anyhow error 封装, 实现了行号打印, 使用示例如下
@@ -14,12 +14,13 @@ use std::fs::File;
 ///
 ///         File:open(filepath).context(errlog!("Cannot open file {}", filepath))?;
 ///
+#[macro_export]
 macro_rules! errlog {
     ($msg:literal $(,)?) => {
-        anyhow!(format!("[{}].[{}]: {}", file!(), line!(), $msg))
+        anyhow::anyhow!(format!("[{}].[{}]: {}", file!(), line!(), $msg))
     };
     ($fmt:expr, $($arg:tt)*) => {
-        anyhow!(format!("[{}].[{}]: {}", file!(), line!(), format!($fmt, $($arg)*)))
+        anyhow::anyhow!(format!("[{}].[{}]: {}", file!(), line!(), format!($fmt, $($arg)*)))
     };
 }
 

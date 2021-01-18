@@ -62,7 +62,7 @@ use tokio::net::{TcpListener, TcpStream};
 use std::net::Shutdown;
 use std::io::{Error, ErrorKind};
 
-use relayer::{RelayerConfig, RelayerType, load_config};
+use relayer::{RelayerConfig, RelayerType, Result, Context, errlog};
 
 #[derive(Debug)]
 struct Socks5Request {
@@ -81,7 +81,7 @@ impl std::fmt::Display for Socks5Request {
 }
 
 impl Socks5Request {
-    async fn from_stream(stream: &mut TcpStream) -> Result<Self, Box<dyn std::error::Error>> {
+    async fn from_stream(stream: &mut TcpStream) -> Result<Self> {
         let mut buf = [0u8; 4];
         stream.read_exact(&mut buf).await?;
 
@@ -127,14 +127,14 @@ impl Socks5Request {
     }
 }
 
-async fn handle(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle(mut stream: TcpStream) -> Result<()> {
     let mut header = [0u8; 2];
-    stream.read_exact(&mut header).await.unwrap();
+    stream.read_exact(&mut header).await
+        .context("read header error")?;
     let (version, auth_method_count) = (header[0], header[1]);
     if version != 0x5 || auth_method_count <= 0 {
         //stream.shutdown(Shutdown::Both)?;
-        let err = Box::new(Error::new(ErrorKind::ConnectionAborted, "Not a valid socks5 connection!"));
-        return Err(err);
+        return Err(errlog!("Not a valid socks5 connection"));
     }
     let supported_auths = vec![0x00, 0x02];
     let mut allowed_auths: Vec<u8> = vec![];
@@ -153,9 +153,11 @@ async fn handle(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-pub async fn run(srvconf: RelayerConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let local_addr = srvconf.get_local_addr().parse::<SocketAddr>().unwrap();
-    let mut listener = TcpListener::bind(&local_addr).await.unwrap();
+pub async fn run(srvconf: RelayerConfig) -> Result<()> {
+    let local_addr = srvconf.get_local_addr().parse::<SocketAddr>()
+        .context(errlog!("Parse {:?} into local address failed", srvconf))?;
+    let mut listener = TcpListener::bind(&local_addr).await
+        .context(errlog!("Failed to listen {}", local_addr))?;
     println!("Listening at {} ...", local_addr.to_string());
     loop {
         let (local_stream, local_peer) = listener.accept().await?;
@@ -163,15 +165,15 @@ pub async fn run(srvconf: RelayerConfig) -> Result<(), Box<dyn std::error::Error
         let srvconf = srvconf.clone();
         tokio::spawn(
             async move {
-                handle(local_stream).await.unwrap();
+                handle(local_stream).await;
             }
         );
     }
 }
 
 #[tokio::main]
-async fn main() -> Result<(),  Box<dyn std::error::Error>> {
-    let srvconf = load_config(RelayerType::SERVER)?;
+async fn main() -> Result<()> {
+    let srvconf = relayer::load_config(RelayerType::SERVER)?;
     println!("{}", srvconf);
     run(srvconf).await?;
     Ok(())
