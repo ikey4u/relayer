@@ -1,8 +1,10 @@
 use dirs;
 use serde_json as json;
 use serde::{Serialize, Deserialize};
-pub use anyhow::{Context, Result, anyhow};
+use tokio::net::TcpStream;
 use std::fs::File;
+
+pub use anyhow::{Context, Result};
 
 /// anyhow error 封装, 实现了行号打印, 使用示例如下
 ///
@@ -36,7 +38,6 @@ pub enum RelayerType {
     CLIENT,
     SERVER,
 }
-
 
 impl RelayerConfig {
     pub fn get_server_addr(&self) -> Option<String> {
@@ -84,4 +85,14 @@ pub fn load_config(conftype: RelayerType) -> Result<RelayerConfig> {
     let config: RelayerConfig = json::from_reader(config)
         .context(errlog!("Cannot load json from {:?}", confpath))?;
     Ok(config)
+}
+
+async fn forward(mut srcstream: TcpStream, mut dststream: TcpStream) -> Result<()> {
+    let (mut local_recv, mut local_send) = srcstream.split();
+    let (mut remote_recv, mut remote_send) = dststream.split();
+    let (_remote_bytes_copied, _local_bytes_copied) = futures::join!(
+        tokio::io::copy(&mut remote_recv, &mut local_send),
+        tokio::io::copy(&mut local_recv, &mut remote_send),
+    );
+    Ok(())
 }
