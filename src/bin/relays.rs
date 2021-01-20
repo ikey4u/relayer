@@ -1,6 +1,6 @@
 use relayer::{RelayerConfig, RelayerType, Result, Context, errlog};
 
-use std::net::{SocketAddr};
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -106,7 +106,7 @@ impl<'a> Handshake<'a> {
             TODO
 
     */
-    async fn second(&mut self) -> Result<()> {
+    async fn second(&mut self) -> Result<TcpStream> {
         let mut buf = [0u8; 4];
         self.stream.read_exact(&mut buf).await?;
 
@@ -120,22 +120,26 @@ impl<'a> Handshake<'a> {
                 self.stream.read_exact(&mut ipv4).await?;
                 let addr = &ipv4.iter().map(std::string::ToString::to_string).collect::<Vec<String>>().join(".");
                 println!("IPv4: {}", addr);
-                ipv4.to_vec()
+                Some(ipv4.to_vec())
             },
             0x03 => {
                 let mut buf = [0u8; 1];
                 self.stream.read_exact(&mut buf).await?;
                 let domain = vec![0u8; buf[0] as usize];
                 println!("Domain: {}", String::from_utf8_lossy(&domain).to_string());
-                domain.to_vec()
+                Some(domain.to_vec())
             },
             0x04 => {
                 let mut ipv6 = [0u8; 16];
                 self.stream.read_exact(&mut ipv6).await?;
                 println!("IPv6: TODO(...)");
-                ipv6.to_vec()
+                Some(ipv6.to_vec())
             },
-            _ => panic!(),
+            _ => {
+                let err = errlog!("Unsupport addr_type {}", addr_type);
+                println!("{}", err);
+                None
+            }
         };
 
         let mut port = [0u8; 2];
@@ -145,14 +149,58 @@ impl<'a> Handshake<'a> {
         println!("[2: client -> server]");
         println!("version: {}; cmd: {}; reserved: {}", version, cmd, reserved);
         println!("addr_type: {}; addr: {:?}; port: {}", addr_type, addr, port);
-        Ok(())
+
+        // succeeded
+        let mut reply = 0u8;
+        println!("[2: server -> client]");
+        let target_stream = match cmd {
+            // connect
+            1 => {
+                if let Some(addr) = addr {
+                    let ipaddr = IpAddr::V4(Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3]));
+                    let ipaddr = SocketAddr::new(ipaddr, port);
+                    match TcpStream::connect(ipaddr).await {
+                        Ok(stream) => Some(stream),
+                        Err(e) => {
+                            // Connection refused
+                            reply = 0x05;
+                            let err = errlog!("Connect to target failed: {}", e);
+                            println!("{}", err);
+                            None
+                        }
+                    }
+                } else {
+                    // addr type not supported
+                    reply = 0x08;
+                    None
+                }
+            }
+            _ => {
+                // Command not supported
+                reply = 0x07;
+                let err = errlog!("Only support connect command");
+                println!("{}", err);
+                None
+            }
+        };
+        let resp = vec![version, reply, 0x00, addr_type, 0x00, 0x00, 0x00, 0x00, 80];
+        println!("{:?}", resp);
+        self.stream.write_all(&resp).await?;
+        println!("DONE");
+        if let Some(target_stream) = target_stream {
+            Ok(target_stream)
+        } else {
+            Err(errlog!("Failed to establish connection"))
+        }
     }
 }
 
-async fn handle(mut stream: TcpStream) -> Result<()> {
-    let mut handshake = Handshake::new(&mut stream);
+async fn handle(mut client_stream: TcpStream) -> Result<()> {
+    let mut handshake = Handshake::new(&mut client_stream);
     handshake.first().await?;
-    handshake.second().await?;
+    let target_stream = handshake.second().await?;
+    println!("[+] Normal connection ....");
+    relayer::forward(client_stream, target_stream).await?;
     Ok(())
 }
 

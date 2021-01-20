@@ -87,7 +87,7 @@ pub fn load_config(conftype: RelayerType) -> Result<RelayerConfig> {
     Ok(config)
 }
 
-async fn forward(mut srcstream: TcpStream, mut dststream: TcpStream) -> Result<()> {
+pub async fn forward(mut srcstream: TcpStream, mut dststream: TcpStream) -> Result<()> {
     let (mut local_recv, mut local_send) = srcstream.split();
     let (mut remote_recv, mut remote_send) = dststream.split();
     let (_remote_bytes_copied, _local_bytes_copied) = futures::join!(
