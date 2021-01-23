@@ -183,7 +183,7 @@ impl<'a> Handshake<'a> {
                 None
             }
         };
-        let resp = vec![version, reply, 0x00, addr_type, 0x00, 0x00, 0x00, 0x00, 80];
+        let resp = vec![version, reply, 0x00, addr_type, 0x00, 0x00, 0x00, 0x00, 0x00, 80];
         println!("{:?}", resp);
         self.stream.write_all(&resp).await?;
         println!("DONE");

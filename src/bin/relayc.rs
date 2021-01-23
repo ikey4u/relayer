@@ -13,7 +13,7 @@ pub async fn run(config: RelayerConfig) -> Result<()> {
         .context(errlog!("Parse {:?} into remote address failed!"))?;
     let listener = TcpListener::bind(&local_addr).await
         .context(errlog!("Bind to {:?} failed", local_addr))?;
-    println!("Listening at {} ...", local_addr.to_string());
+    println!("[+] Listening at {} ...", local_addr.to_string());
     loop {
         let (mut local, local_peer) = listener.accept().await?;
         tokio::spawn(async move {
